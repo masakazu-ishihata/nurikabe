@@ -21,10 +21,10 @@ OptionParser.new { |opts|
   opts.on("-f [string]", "--file", "problem file"){ |f|
     @file = f
   }
-  opts.on("--show", "show"){
+  opts.on("--show", "show log"){
     @@show = true
   }
-  opts.on("--fast", "fast"){
+  opts.on("--fast", "solve by a fast version (actually, not fast)"){
     @@fast = true
   }
   # parse
