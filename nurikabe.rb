@@ -7,6 +7,7 @@
 @file = "p1.txt"
 @@show = false
 @@fast = false
+@@conn = false
 
 ################################################################################
 # Arguments
@@ -26,6 +27,9 @@ OptionParser.new { |opts|
   }
   opts.on("--fast", "solve by a fast version (actually, not fast)"){
     @@fast = true
+  }
+  opts.on("--conn", "search a solution s.t. blacks are connected"){
+    @@conn = true
   }
   # parse
   opts.parse!(ARGV)
@@ -198,6 +202,28 @@ class MyPattern
 
     true
   end
+
+  #### connected? ####
+  def MyPattern.connected?(pnls)
+    rec = Hash.new(nil)  # reachable or not
+
+    pnls.each do |pnl|
+      rec[pnl] = -1      # set unreachable
+    end
+
+    cs = [ pnls.first ]
+    while (c = cs.shift) != nil
+      rec[c] = 1 # reach
+      MyPanel.get_neighbors(c).each do |n|
+        cs.push(n) if rec[n] == -1
+      end
+    end
+
+    pnls.each do |pnl|
+      return false if rec[pnl] == -1
+    end
+    return true
+  end
 end
 
 ######## solver ########
@@ -218,6 +244,12 @@ class MyNurikabe
 #    @n.sort!{|a, b| a[2] <=> b[2]}
     @n.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
 
+    @rest = []
+    for y in 0..@y-1
+      for x in 0..@x-1
+        @rest.push([x, y])
+      end
+    end
 
     # init solution
     @init = Array.new(@n.size)
@@ -227,9 +259,9 @@ class MyNurikabe
       y = @n[i][1]
       n = @n[i][2]
       ptn = MyPattern.new([x, y])
-
       @init[i] = ptn
       @ptns[i].push(ptn) if n == 1
+      @rest -= [ptn]
     end
 
     # show problem
@@ -275,6 +307,7 @@ class MyNurikabe
 
   #### consistent ####
   def consistent?(sol, index, ptn)
+    # consistent with other patterns
     for i in 0..sol.size-1
       next if i == index
       return false if !ptn.consistent?(sol[i])
@@ -331,11 +364,12 @@ class MyNurikabe
 
   #### solve slowly ####
   def solve
-    cs = [ [0, @init] ]
+    cs = [ [0, @init, @rest] ]
     while (c = cs.pop) != nil
       index = c[0]
       sol   = c[1]
-      break if index == @n.size  # c is a solution
+      rest  = c[2]
+      break if index == @n.size
 
       # enumerate all candiate of children
       can = get_candidates(sol, index)
@@ -351,8 +385,10 @@ class MyNurikabe
         if consistent?(sol, index, ptn)
           cldi = index + 1
           clds = sol.clone
+          cldr = rest.clone
           clds[index] = ptn
-          cs.push([cldi, clds])
+          cldr -= ptn.pnls
+          cs.push([cldi, clds, cldr]) if !@@conn || MyPattern.connected?(cldr)
         end
       end
     end
