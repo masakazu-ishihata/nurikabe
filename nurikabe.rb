@@ -61,17 +61,17 @@ class MyPattern
 
   #### member ####
   def member?(pnl)
-    if @dist[pnl] >= 0
-      true
-    else
-      false
-    end
+    @dist[pnl] >= 0
+  end
+
+  #### larger than last ####
+  def larger_than_last?(pnl)
+    pnl[1] > @pnls.last[1] || (pnl[1] == @pnls.last[1] && pnl[0] > @pnls.last[0])
   end
 
   #### add a panel ####
   def push(pnl)
-    abort("error @ MyPattern.push : multi-add") if member?(pnl)  # skip if pnl is a member
-
+    self if member?(pnl)
     @pnls.push(pnl)
     @dist[pnl] = get_distance(pnl)
     self
@@ -103,7 +103,6 @@ class MyPattern
       bd[ pnl[1]-min[1] ][ pnl[0]-min[0] ] =  " *"
     end
 
-    puts "--------------------------------------------------------------------------------"
     p @pnls
     p @dist
     bd.each do |line|
@@ -111,29 +110,16 @@ class MyPattern
     end
   end
 
-  #### neighbors of pnl which in the pattern ####
-  def get_neighbors(pnl)
-    nbs = []
-    MyPanel.get_neighbors(pnl).each do |n|
-      nbs.push(n) if member?(n)
-    end
-    nbs
-  end
-
   #### get distance of pnl ####
   def get_distance(pnl)
     return @dist[pnl] if @dist[pnl] >= 0
-    return -1 if (nbs = get_neighbors(pnl)) == []
     min = nil
-    nbs.each do |n|
+    MyPanel.get_neighbors(pnl).each do |n|
+      next if !member?(n)
       min = @dist[n] if min == nil || min > @dist[n]
     end
-    return min + 1
-  end
-
-  #### larger than last ####
-  def larger_than_last?(pnl)
-    pnl[1] > @pnls.last[1] || (pnl[1] == @pnls.last[1] && pnl[0] > @pnls.last[0])
+    return -1 if min == nil
+    return min + 1 
   end
 
   #### generate candidate panels ####
@@ -158,15 +144,6 @@ class MyPattern
       end
     end
     pnls
-  end
-
-  #### generate child patterns ####
-  def get_children
-    cld = []
-    get_next_panels.each do |pnl|
-      cld.push(clone.push(pnl))
-    end
-    cld
   end
 end
 
@@ -267,10 +244,6 @@ class MyBoard
     bd.each do |line|
       puts "#{line.join()}"
     end
-
-    @board.each do |line|
-#      p line
-    end
   end
 
   #### clone ####
@@ -363,15 +336,20 @@ b = MyBoard.new
 b.load(@file)
 b.show
 
+# depth first search
 step = 0
 cs = [ b ]
-while (c = cs.pop) != nil
+while (c = cs.pop) != nil 
   step += 1
+
+  # show
   puts "#{step} steps  -> #{cs.size} candidates (next = #{c.next}/#{c.n})" if step % @step == 0
-  break if !c.seek
   c.show if @show
+
+  # add children to cs
+  break if !c.seek
   cs += c.get_children
 end
+
 puts "found at the #{step} step"
 c.show
-
