@@ -6,8 +6,6 @@
 ################################################################################
 @file = "p1.txt"
 @@show = false
-@@fast = false
-@@conn = false
 
 ################################################################################
 # Arguments
@@ -25,12 +23,6 @@ OptionParser.new { |opts|
   opts.on("--show", "show log"){
     @@show = true
   }
-  opts.on("--fast", "solve by a fast version (actually, not fast)"){
-    @@fast = true
-  }
-  opts.on("--conn", "search a solution s.t. blacks are connected"){
-    @@conn = true
-  }
   # parse
   opts.parse!(ARGV)
 }
@@ -45,11 +37,6 @@ class MyPanel
     x = pnl[0]
     y = pnl[1]
     [ [x, y-1], [x-1, y], [x+1, y], [x, y+1] ]
-  end
-
-  #### on a board x * y ####
-  def MyPanel.on_board?(pnl, x, y)
-    (0 <= pnl[0] && pnl[0] < x) && (0 <= pnl[1] && pnl[1] < y)
   end
 end
 
@@ -79,7 +66,7 @@ class MyPattern
 
   #### add a panel ####
   def push(pnl)
-    self if member?(pnl)  # skip if pnl is a member
+    abort("error @ MyPattern.push : multi-add") if member?(pnl)  # skip if pnl is a member
 
     @pnls.push(pnl)
     @dist[pnl] = get_distance(pnl)
@@ -140,6 +127,11 @@ class MyPattern
     return min + 1
   end
 
+  #### larger than last ####
+  def larger_than_last?(pnl)
+    pnl[1] > @pnls.last[1] || (pnl[1] == @pnls.last[1] && pnl[0] > @pnls.last[0])
+  end
+
   #### generate candidate panels ####
   def get_next_panels
     pnls = []
@@ -172,239 +164,205 @@ class MyPattern
     end
     cld
   end
-
-  #### larger than last ####
-  def larger_than_last?(pnl)
-    pnl[1] > @pnls.last[1] || (pnl[1] == @pnls.last[1] && pnl[0] > @pnls.last[0])
-  end
-
-  #### on_board ####
-  def on_board?(x, y)
-    @pnls.each do |pnl|
-      return false if !MyPanel.on_board?(pnl, x, y)
-    end
-    return true
-  end
-
-  #### consistent with ptn?####
-  def consistent?(ptn)
-    # common members?
-    @pnls.each do |pnl|
-      return false if ptn.member?(pnl)
-    end
-
-    # connected?
-    @pnls.each do |pnl|
-      MyPanel.get_neighbors(pnl).each do |n|
-        return false if ptn.member?(n)
-      end
-    end
-
-    true
-  end
-
-  #### connected? ####
-  def MyPattern.connected?(pnls)
-    rec = Hash.new(nil)  # reachable or not
-
-    pnls.each do |pnl|
-      rec[pnl] = -1      # set unreachable
-    end
-
-    cs = [ pnls.first ]
-    while (c = cs.shift) != nil
-      rec[c] = 1 # reach
-      MyPanel.get_neighbors(c).each do |n|
-        cs.push(n) if rec[n] == -1
-      end
-    end
-
-    pnls.each do |pnl|
-      return false if rec[pnl] == -1
-    end
-    return true
-  end
 end
 
-######## solver ########
-class MyNurikabe
-  #### new ###
-  def initialize(file)
+######## board ####
+class MyBoard
+  #### new ####
+  def initialize
+    @x = 0       # board width
+    @y = 0       # board height
+    @n = 0       # # numbers in a problem
+    @board = nil # board
+    @next = 0    # next number index
+    @nums = []   # numbers
+    @ptns = []   # patterns corresponding to numbers
+  end
+  attr_reader :x, :y, :n, :board, :next, :nums, :ptns
+
+  #### initizlize a board ####
+  def init_board(x, y)
+    @x = x
+    @y = y
+    @board = Array.new(@y){|y| Array.new(@x){|x| -1}} # -1 means empty
+  end
+
+  #### load a file ####
+  def load(file)
     f = open(file)
 
-    # load problem
-    @x = f.gets.to_i
-    @y = f.gets.to_i
-    @n = []
+    # initialize board
+    init_board(f.gets.to_i, f.gets.to_i)
+
+    # heuristic ordering
+    nums = []
     while line = f.gets
       ary = line.split(" ").map{|i| i.to_i}
-      @n.push( ary )
+      nums.push( ary )
     end
-#    @n.sort!{|a, b| a[0]+a[1] <=> b[0]+b[1]}
-#    @n.sort!{|a, b| a[2] <=> b[2]}
-    @n.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
+    nums.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
 
-    @rest = []
-    for y in 0..@y-1
-      for x in 0..@x-1
-        @rest.push([x, y])
-      end
+    # set numbers
+    nums.each do |x, y, n|
+      set(x, y, n)
     end
 
-    # init solution
-    @init = Array.new(@n.size)
-    @ptns = Array.new(@n.size){|i| []}
-    for i in 0..@n.size-1
-      x = @n[i][0]
-      y = @n[i][1]
-      n = @n[i][2]
-      ptn = MyPattern.new([x, y])
-      @init[i] = ptn
-      @ptns[i].push(ptn) if n == 1
-      @rest -= [ptn]
-    end
+    f.close
+  end
 
-    # show problem
-    show_solution(@init)
+  #### push a number ####
+  def set(x, y, n)
+    @nums.push(n)
+    @ptns.push(MyPattern.new([x, y]))
+    @board[y][x] = @n
+    @n += 1
+  end
+
+  #### add a panel pnl to a pattern @ptns[index] ####
+  def add(pnl, index)
+    @board[ pnl[1] ][ pnl[0] ] = index
+    @ptns[index].push(pnl)
+    self
+  end
+
+  #### seek the next index ####
+  def seek
+    while @next < @n && @ptns[@next].size == @nums[@next]
+      @next += 1
+    end
+    return true if @next < @n
+    return false
+  end
+
+  #### look ####
+  def look(pnl)
+    @board[pnl[1]][pnl[0]]
+  end
+
+  #### on board? ####
+  def on_board?(pnl)
+    (0 <= pnl[0] && pnl[0] < @x) && (0 <= pnl[1] && pnl[1] < @y)
   end
 
   #### show ####
-  def show_solution(s)
+  def show
     bd = Array.new(@y){|i| Array.new(@x){|j| " _"}}
 
-    s.each do |ptn|
-      ptn.pnls.each do |pnl|
+    # patterns
+    for i in 0..@n-1
+      first = @ptns[i].pnls.first
+      rests = @ptns[i].pnls - [first]
+
+      bd[ first[1] ][ first[0] ] = sprintf("%2d", @nums[i])
+      rests.each do |pnl|
         bd[pnl[1]][pnl[0]] = " *"
       end
     end
 
-    @n.each do |x, y, n|
-      bd[y][x] = sprintf("%2d", n)
-    end
-
+    puts "#{@x} * #{@y}"
     bd.each do |line|
       puts "#{line.join()}"
     end
+
+    @board.each do |line|
+#      p line
+    end
   end
 
-  #### enumerate coandidate patterns of sol[index] ####
-  def get_candidates(sol, index)
-    ptns = []
-    cs = [ sol[index] ]
-    while (c = cs.shift) != nil
-      if c.size == @n[index][2]
-        # c is a pattern with n panels
-        ptns.push(c)
-      else
-        # add neighbors which is on board & consistent with othoer patterns
-        c.get_children.each do |ptn|
-          cs.push(ptn) if ptn.on_board?(@x, @y) && consistent?(sol, index, ptn)
-        end
+  #### clone ####
+  def clone
+    b = MyBoard.new.copy(self)
+  end
+  def copy(bd)
+    init_board(bd.x, bd.y)
+    for y in 0..@y-1
+      for x in 0..@x-1
+        @board[y][x] = bd.board[y][x]
       end
     end
-    ptns
+    bd.nums.each do |num|
+      @nums.push(num)
+    end
+    bd.ptns.each do |ptn|
+      @ptns.push(ptn.clone)
+    end
+    @n = bd.n
+    @next = bd.next
+
+    self
   end
 
-  #### consistent ####
-  def consistent?(sol, index, ptn)
-    # consistent with other patterns
-    for i in 0..sol.size-1
-      next if i == index
-      return false if !ptn.consistent?(sol[i])
+  #### get children ####
+  def get_children
+    [] if !seek
+
+    cld = []
+    @ptns[@next].get_next_panels.each do |pnl|
+      cld.push(clone.add(pnl, @next)) if addable?(pnl)
     end
-    return true
+    cld
   end
 
-  #### solve ####
-  def solve_fast
-    # enumeate all candidate pattern for each numbers
-    for i in 0..@n.size-1
-      next if @ptns[i].size == 1
-      @ptns[i] = get_candidates(@init, i)
-      if @ptns[i].size == 1
-        @init[i] = @ptns[i][0]
-        i = 0
-      end
+  #### pnl is addable to @pnls[@next] ####
+  def addable?(pnl)
+    # on board & empty
+    return false if !on_board?(pnl)
+    return false if look(pnl) != -1
+
+    # pnl's neighbors should be @next or 0 (empty)
+    MyPanel.get_neighbors(pnl).each do |n|
+      next if !on_board?(n)
+      return false if look(n) != -1 && look(n) != @next
     end
 
-    # show if needed
-    if @@show
-      for i in 0..@n.size-1
-        puts "#{@n[i]} #{@ptns[i].size} candidates"
-      end
+    # empty area should be connected
+    return connected_without?(pnl)
+  end
+
+  #### empty area without pnl is connected ####
+  def connected_without?(pnl)
+    @board[ pnl[1] ][ pnl[0] ] = -999 # set a temporal value
+
+    nbs = []
+    MyPanel.get_neighbors(pnl).each do |n|
+      next if !on_board?(n)
+      nbs.push(n) if look(n) == -1
     end
 
-    # solve
-    cs = [ [0, @init] ]
+    s = nbs.first  # start
+    t = nbs - [s]  # targets
+
+    rec = Hash.new(nil) # reached
+    cs = [ s ]
+    rec[s] = true
+
     while (c = cs.pop) != nil
-      index = c[0]
-      sol   = c[1]
-      break if index == @n.size  # c is a solution
-
-      # show if needed
-      if @@show && @ptns[index].size > 0
-        puts "#{index} / #{@n.size}"
-        puts " --> #{@ptns[index].size} candidates"
-      end
-
-      # add children
-      @ptns[index].each do |ptn|
-        if consistent?(sol, index, ptn)
-          cldi = index + 1
-          clds = sol.clone
-          clds[index] = ptn
-          cs.push([cldi, clds])
-        end
+      break if (t -= [c]) == []
+      MyPanel.get_neighbors(c).each do |n|
+        next if !on_board?(n) || look(n) != -1 || rec[n] == true
+        rec[n] = true
+        cs.push(n)
       end
     end
 
-    # solution
-    show_solution(sol)
-  end
+    @board[ pnl[1] ][ pnl[0] ] = -1   # set "empty"
 
-  #### solve slowly ####
-  def solve
-    cs = [ [0, @init, @rest] ]
-    while (c = cs.pop) != nil
-      index = c[0]
-      sol   = c[1]
-      rest  = c[2]
-      break if index == @n.size
-
-      # enumerate all candiate of children
-      can = get_candidates(sol, index)
-
-      # show if needed
-      if @@show &&  can.size > 0
-        puts "#{index} / #{@n.size}"
-        puts " --> #{can.size} candidates"
-      end
-
-      # generate & add children
-      can.each do |ptn|
-        if consistent?(sol, index, ptn)
-          cldi = index + 1
-          clds = sol.clone
-          cldr = rest.clone
-          clds[index] = ptn
-          cldr -= ptn.pnls
-          cs.push([cldi, clds, cldr]) if !@@conn || MyPattern.connected?(cldr)
-        end
-      end
-    end
-
-    # solution
-    puts "solution"
-    show_solution(sol)
+    return true if t.size == 0
+    return false
   end
 end
 
 ################################################################################
 # main
 ################################################################################
-n = MyNurikabe.new(@file)
-if @@fast
-  n.solve_fast
-else
-  n.solve
+b = MyBoard.new
+b.load(@file)
+b.show
+
+cs = [ b ]
+while (c = cs.pop) != nil
+  break if !c.seek
+  c.show if @@show
+  cs += c.get_children
 end
+c.show
