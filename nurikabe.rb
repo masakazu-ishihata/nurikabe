@@ -5,7 +5,8 @@
 # default
 ################################################################################
 @file = "p1.txt"
-@@show = false
+@show = false
+@step = 100
 
 ################################################################################
 # Arguments
@@ -21,7 +22,10 @@ OptionParser.new { |opts|
     @file = f
   }
   opts.on("--show", "show log"){
-    @@show = true
+    @show = true
+  }
+  opts.on("--step [int]", "show # candidates every [int] steps"){ |f|
+    @step = f.to_i
   }
   # parse
   opts.parse!(ARGV)
@@ -359,10 +363,15 @@ b = MyBoard.new
 b.load(@file)
 b.show
 
+step = 0
 cs = [ b ]
 while (c = cs.pop) != nil
+  step += 1
+  puts "#{step} steps  -> #{cs.size} candidates (next = #{c.next}/#{c.n})" if step % @step == 0
   break if !c.seek
-  c.show if @@show
+  c.show if @show
   cs += c.get_children
 end
+puts "found at the #{step} step"
 c.show
+
