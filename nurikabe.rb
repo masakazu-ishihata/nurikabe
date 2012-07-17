@@ -113,13 +113,15 @@ class MyPattern
   #### get distance of pnl ####
   def get_distance(pnl)
     return @dist[pnl] if @dist[pnl] >= 0
+
     min = nil
     MyPanel.get_neighbors(pnl).each do |n|
       next if !member?(n)
       min = @dist[n] if min == nil || min > @dist[n]
     end
+
     return -1 if min == nil
-    return min + 1 
+    return min + 1
   end
 
   #### generate candidate panels ####
@@ -172,16 +174,19 @@ class MyBoard
   def load(file)
     f = open(file)
 
-    # initialize board
+    # load data
     init_board(f.gets.to_i, f.gets.to_i)
-
-    # heuristic ordering
     nums = []
     while line = f.gets
       ary = line.split(" ").map{|i| i.to_i}
       nums.push( ary )
     end
-    nums.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
+
+    # heuristic ordering
+#    nums.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
+#    nums.sort!{|a, b| (b[2] <=> a[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
+    nums.sort!{|a, b| (a[0]+a[1] <=> b[0]+b[1])}
+
 
     # set numbers
     nums.each do |x, y, n|
@@ -211,8 +216,7 @@ class MyBoard
     while @next < @n && @ptns[@next].size == @nums[@next]
       @next += 1
     end
-    return true if @next < @n
-    return false
+    @next < @n # return true/false
   end
 
   #### look ####
@@ -223,6 +227,11 @@ class MyBoard
   #### on board? ####
   def on_board?(pnl)
     (0 <= pnl[0] && pnl[0] < @x) && (0 <= pnl[1] && pnl[1] < @y)
+  end
+
+  #### empty? ####
+  def empty?(pnl)
+    on_board?(pnl) && look(pnl) == -1
   end
 
   #### show ####
@@ -282,50 +291,104 @@ class MyBoard
 
   #### pnl is addable to @pnls[@next] ####
   def addable?(pnl)
-    # on board & empty
-    return false if !on_board?(pnl)
-    return false if look(pnl) != -1
+    return false if !empty?(pnl)  # not empty
 
-    # pnl's neighbors should be @next or 0 (empty)
+    # pnl's neighbors should be empty or @next
     MyPanel.get_neighbors(pnl).each do |n|
-      next if !on_board?(n)
-      return false if look(n) != -1 && look(n) != @next
+      return false if on_board?(n) && look(n) != -1 && look(n) != @next
     end
 
     # empty area should be connected
-    return connected_without?(pnl)
+    return false if !connected_without?(pnl)
+
+    # has no fixed block
+    return false if !has_fixed_block?
+
+    return true
   end
 
   #### empty area without pnl is connected ####
   def connected_without?(pnl)
     @board[ pnl[1] ][ pnl[0] ] = -999 # set a temporal value
 
+    # neighbors
     nbs = []
     MyPanel.get_neighbors(pnl).each do |n|
-      next if !on_board?(n)
-      nbs.push(n) if look(n) == -1
+      nbs.push(n) if empty?(pnl)
     end
 
     s = nbs.first  # start
     t = nbs - [s]  # targets
 
-    rec = Hash.new(nil) # reached
+    rec = Hash.new(false)  # reached or not
     cs = [ s ]
     rec[s] = true
 
     while (c = cs.pop) != nil
       break if (t -= [c]) == []
       MyPanel.get_neighbors(c).each do |n|
-        next if !on_board?(n) || look(n) != -1 || rec[n] == true
+        next if !empty?(n) || rec[n]
         rec[n] = true
         cs.push(n)
       end
     end
 
-    @board[ pnl[1] ][ pnl[0] ] = -1   # set "empty"
+    @board[ pnl[1] ][ pnl[0] ] = -1   # set "empty" again
 
-    return true if t.size == 0
+    t.size == 0 # return true/false
+  end
+
+  #### has fixed block ####
+  def has_fixed_block?
+    return false if (blks = get_block) == []
+
+    blks.each do |blk|
+      for i in 0..@n-1
+        next if @ptns[i].size == @nums[i]
+        break if touchable?(@ptns[i], @nums[i], blk)
+      end
+      return false if i == @n
+    end
+    return true
+  end
+
+  #### enumerate all blocks ####
+  def get_block
+    # enumerate blocks
+    blocks = []
+    for y in 0..@y-1
+      for x in 0..@x-1
+        blocks.push([x, y]) if is_block?([x, y])
+      end
+    end
+    blocks
+  end
+
+  #### pnl is (a left-up panel of) a block? ####
+  def is_block?(pnl)
+    x = pnl[0]
+    y = pnl[1]
+    empty?([x, y]) && empty?([x+1, y]) && empty?([x, y+1]) && empty?([x+1, y+1])
+  end
+
+  #### touchable?(pnl, blk) : pnl = [x, y],  blk = [x, y] : left-top of a block
+  def touchable?(ptn, n, blk)
+    r = n - ptn.size
+    ptn.pnls.each do |pnl|
+      return true if distance(pnl, blk) <= r
+    end
     return false
+  end
+
+  #### distance from pnl to blk ####
+  def distance(pnl, blk)
+    # distance
+    dx = pnl[0] - blk[0] - 1 if blk[0] < pnl[0]
+    dx = blk[0] - pnl[0]     if pnl[0] <= blk[0]
+    dy = pnl[1] - blk[1] - 1 if blk[1] < pnl[1]
+    dy = blk[1] - pnl[1]     if pnl[1] <= blk[1]
+
+    dx + dy # distance
   end
 end
 
@@ -338,8 +401,9 @@ b.show
 
 # depth first search
 step = 0
+
 cs = [ b ]
-while (c = cs.pop) != nil 
+while (c = cs.pop) != nil
   step += 1
 
   # show
@@ -347,7 +411,8 @@ while (c = cs.pop) != nil
   c.show if @show
 
   # add children to cs
-  break if !c.seek
+  break if !c.seek && !c.has_fixed_block?
+  next if !c.seek
   cs += c.get_children
 end
 
