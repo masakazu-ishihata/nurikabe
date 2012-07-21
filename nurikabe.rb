@@ -183,9 +183,9 @@ class MyBoard
     end
 
     # heuristic ordering
-#    nums.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
+    nums.sort!{|a, b| (a[2] <=> b[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
 #    nums.sort!{|a, b| (b[2] <=> a[2]).nonzero? or (a[0]+a[1] <=> b[0]+b[1])}
-    nums.sort!{|a, b| (a[0]+a[1] <=> b[0]+b[1])}
+#    nums.sort!{|a, b| (a[0]+a[1] <=> b[0]+b[1])}
 
 
     # set numbers
@@ -311,10 +311,10 @@ class MyBoard
   def connected_without?(pnl)
     @board[ pnl[1] ][ pnl[0] ] = -999 # set a temporal value
 
-    # neighbors
+    # empty neighbors
     nbs = []
     MyPanel.get_neighbors(pnl).each do |n|
-      nbs.push(n) if empty?(pnl)
+      nbs.push(n) if empty?(n)
     end
 
     s = nbs.first  # start
@@ -327,7 +327,7 @@ class MyBoard
     while (c = cs.pop) != nil
       break if (t -= [c]) == []
       MyPanel.get_neighbors(c).each do |n|
-        next if !empty?(n) || rec[n]
+        next if rec[n] || !on_board?(n) || look(n) != -1
         rec[n] = true
         cs.push(n)
       end
